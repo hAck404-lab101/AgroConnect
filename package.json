@@ -1,0 +1,30 @@
+{
+  "name": "agroconnect",
+  "version": "2.0.0",
+  "description": "AgroConnect - Digital ecosystem connecting farmers, buyers, transporters, and suppliers",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "backend",
+    "shared"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:web\"",
+    "dev:web": "cd apps/web && npm run dev",
+    "dev:mobile": "cd apps/mobile && npm start",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:all": "concurrently \"npm run dev:backend\" \"npm run dev:web\"",
+    "build:web": "cd apps/web && npm run build",
+    "build:backend": "cd backend && npm run build",
+    "prisma:generate": "cd prisma && npx prisma generate",
+    "prisma:migrate": "cd prisma && npx prisma migrate dev",
+    "prisma:studio": "cd prisma && npx prisma studio",
+    "install:all": "npm install && cd backend && npm install && cd ../apps/web && npm install && cd ../mobile && npm install"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

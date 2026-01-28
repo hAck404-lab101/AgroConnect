@@ -1,0 +1,466 @@
+// AgroConnect Database Schema
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum UserRole {
+  FARMER
+  BUYER
+  TRANSPORTER
+  SUPPLIER
+  ADMIN
+}
+
+enum ProductCategory {
+  CROPS
+  LIVESTOCK
+  INPUTS
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CARD
+  MOBILE_MONEY_MTN
+  MOBILE_MONEY_VODAFONE
+  MOBILE_MONEY_AIRTELTIGO
+}
+
+enum DeliveryStatus {
+  PENDING
+  ASSIGNED
+  IN_TRANSIT
+  DELIVERED
+  FAILED
+}
+
+enum NotificationType {
+  ORDER
+  PAYMENT
+  MESSAGE
+  SYSTEM
+}
+
+// ============================================
+// USER & AUTHENTICATION
+// ============================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String?   // Nullable for OAuth users
+  googleId      String?   @unique
+  role          UserRole  @default(FARMER)
+  isVerified    Boolean   @default(false)
+  isActive      Boolean   @default(true)
+  isSuspended   Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  profile       Profile?
+  products      Product[]
+  ordersAsBuyer Order[]   @relation("BuyerOrders")
+  ordersAsSeller Order[]  @relation("SellerOrders")
+  transporter   Transporter?
+  reviewsGiven  Review[]  @relation("Reviewer")
+  reviewsReceived Review[] @relation("Reviewee")
+  messagesSent  Message[] @relation("Sender")
+  messagesReceived Message[] @relation("Receiver")
+  notifications Notification[]
+  refreshTokens RefreshToken[]
+  adminLogs     AdminLog[]
+
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("refresh_tokens")
+}
+
+model Profile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  firstName   String
+  lastName    String
+  phoneNumber String?
+  address     String?
+  city        String?
+  region      String?
+  country     String   @default("Ghana")
+  latitude    Float?
+  longitude   Float?
+  bio         String?  @db.Text
+  avatar      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("profiles")
+}
+
+// ============================================
+// PRODUCTS & MARKETPLACE
+// ============================================
+
+model Category {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?  @db.Text
+  image       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  products    Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  sellerId    String
+  categoryId  String?
+  title       String
+  description String   @db.Text
+  category    ProductCategory
+  price       Decimal  @db.Decimal(10, 2)
+  quantity    Int      @default(1)
+  unit        String   @default("kg")
+  isAvailable Boolean  @default(true)
+  isApproved  Boolean  @default(false) // Admin approval
+  views       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  seller      User            @relation(fields: [sellerId], references: [id])
+  categoryRef Category?       @relation(fields: [categoryId], references: [id])
+  images      ProductImage[]
+  orderItems  OrderItem[]
+
+  @@index([sellerId])
+  @@index([category])
+  @@index([isAvailable])
+  @@index([isApproved])
+  @@map("products")
+}
+
+model ProductImage {
+  id        String   @id @default(cuid())
+  productId String
+  url       String
+  publicId  String?  // Cloudinary public ID
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@map("product_images")
+}
+
+// ============================================
+// ORDERS & LOGISTICS
+// ============================================
+
+model Order {
+  id              String      @id @default(cuid())
+  buyerId         String
+  sellerId        String
+  transporterId   String?
+  status          OrderStatus @default(PENDING)
+  totalAmount     Decimal     @db.Decimal(10, 2)
+  deliveryAddress String
+  deliveryCity    String
+  deliveryRegion  String
+  deliveryLat     Float?
+  deliveryLng     Float?
+  notes           String?     @db.Text
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  deletedAt       DateTime?
+
+  buyer         User         @relation("BuyerOrders", fields: [buyerId], references: [id])
+  seller        User         @relation("SellerOrders", fields: [sellerId], references: [id])
+  transporter   Transporter? @relation(fields: [transporterId], references: [id])
+  items         OrderItem[]
+  payment       Payment?
+  delivery      Delivery?
+
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([status])
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String   @id @default(cuid())
+  orderId   String
+  productId String
+  quantity  Int
+  price     Decimal  @db.Decimal(10, 2) // Price at time of order
+  createdAt DateTime @default(now())
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+// ============================================
+// PAYMENTS
+// ============================================
+
+model Payment {
+  id              String        @id @default(cuid())
+  orderId         String        @unique
+  amount          Decimal       @db.Decimal(10, 2)
+  status          PaymentStatus @default(PENDING)
+  method          PaymentMethod
+  paystackRef     String?       @unique
+  paystackResponse Json?        // Full Paystack response
+  failureReason   String?       @db.Text
+  paidAt          DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  order       Order        @relation(fields: [orderId], references: [id])
+  transactions Transaction[]
+
+  @@index([orderId])
+  @@index([paystackRef])
+  @@index([status])
+  @@map("payments")
+}
+
+model Transaction {
+  id          String   @id @default(cuid())
+  paymentId   String
+  type        String   // "charge", "refund", etc.
+  amount      Decimal  @db.Decimal(10, 2)
+  reference   String   @unique
+  status      String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  payment Payment @relation(fields: [paymentId], references: [id])
+
+  @@index([paymentId])
+  @@index([reference])
+  @@map("transactions")
+}
+
+// ============================================
+// TRANSPORT
+// ============================================
+
+model Transporter {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  companyName     String?
+  licenseNumber   String?
+  basePrice       Decimal  @db.Decimal(10, 2) // Per km
+  rating          Float    @default(0)
+  totalDeliveries Int      @default(0)
+  isVerified      Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicles  Vehicle[]
+  orders    Order[]
+  deliveries Delivery[]
+
+  @@map("transporters")
+}
+
+model Vehicle {
+  id            String   @id @default(cuid())
+  transporterId String
+  type          String   // "truck", "van", "motorcycle"
+  make          String?
+  model         String?
+  plateNumber   String   @unique
+  capacity      Decimal  @db.Decimal(10, 2) // in kg
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  transporter Transporter @relation(fields: [transporterId], references: [id], onDelete: Cascade)
+
+  @@index([transporterId])
+  @@map("vehicles")
+}
+
+model Delivery {
+  id              String         @id @default(cuid())
+  orderId         String         @unique
+  transporterId   String
+  status          DeliveryStatus @default(PENDING)
+  distance        Float?         // in km
+  deliveryFee     Decimal        @db.Decimal(10, 2)
+  estimatedTime   Int?           // in minutes
+  startedAt       DateTime?
+  completedAt     DateTime?
+  trackingUrl     String?
+  notes           String?        @db.Text
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  order        Order        @relation(fields: [orderId], references: [id])
+  transporter  Transporter @relation(fields: [transporterId], references: [id])
+
+  @@index([orderId])
+  @@index([transporterId])
+  @@index([status])
+  @@map("deliveries")
+}
+
+// ============================================
+// COMMUNICATION
+// ============================================
+
+model Message {
+  id        String   @id @default(cuid())
+  senderId String
+  receiverId String
+  content   String   @db.Text
+  imageUrl  String?
+  isRead    Boolean  @default(false)
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+  deletedAt DateTime?
+
+  sender   User @relation("Sender", fields: [senderId], references: [id])
+  receiver User @relation("Receiver", fields: [receiverId], references: [id])
+
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([createdAt])
+  @@map("messages")
+}
+
+// ============================================
+// REVIEWS & RATINGS
+// ============================================
+
+model Review {
+  id          String   @id @default(cuid())
+  reviewerId  String
+  revieweeId  String
+  orderId     String?  @unique
+  rating      Int      // 1-5
+  comment     String?  @db.Text
+  isApproved  Boolean  @default(false) // Admin moderation
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  reviewer User @relation("Reviewer", fields: [reviewerId], references: [id])
+  reviewee User @relation("Reviewee", fields: [revieweeId], references: [id])
+
+  @@index([reviewerId])
+  @@index([revieweeId])
+  @@index([rating])
+  @@map("reviews")
+}
+
+// ============================================
+// NOTIFICATIONS
+// ============================================
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String           @db.Text
+  data      Json?            // Additional data
+  isRead    Boolean          @default(false)
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// ============================================
+// ADMIN & SYSTEM
+// ============================================
+
+model AdminLog {
+  id        String   @id @default(cuid())
+  adminId   String
+  action    String
+  entity    String?  // "user", "product", "order", etc.
+  entityId  String?
+  details   Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  admin User @relation(fields: [adminId], references: [id])
+
+  @@index([adminId])
+  @@index([createdAt])
+  @@map("admin_logs")
+}
+
+model ApiKey {
+  id          String   @id @default(cuid())
+  name        String
+  service     String   // "paystack", "google", "cloudinary", etc.
+  keyType     String   // "public", "secret", "api_key"
+  value       String   // Encrypted
+  isActive    Boolean  @default(true)
+  description String?  @db.Text
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([service])
+  @@index([isActive])
+  @@map("api_keys")
+}
